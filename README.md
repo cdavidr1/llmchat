@@ -1,6 +1,6 @@
 # llmchat
 
-FastAPI skeleton for the Tribal LLM chat service.
+FastAPI skeleton for the LLM chat service.
 
 ## What Is Here
 
@@ -15,7 +15,7 @@ FastAPI skeleton for the Tribal LLM chat service.
 ## Run Locally
 
 ```bash
-cd /home/yamashi/Work/Python/Tribal/llmchat
+cd /llmchat
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
