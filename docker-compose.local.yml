@@ -1,0 +1,16 @@
+services:
+  python-vault-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: python-vault-app:local
+    pull_policy: build
+    container_name: python-vault-app
+    ports:
+      - "8000:8000"
+    environment:
+      LLMCHAT_CONFIG_DIR: /app/config.example
+      LLMCHAT_FALLBACK_CONFIG_DIR: /app/config.example
+      SECRET_FILE: /vault/secrets/oracle.json
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

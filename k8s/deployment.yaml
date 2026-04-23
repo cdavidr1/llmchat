@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-vault-app
+  namespace: vault-demo
+  labels:
+    app: python-vault-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: python-vault-app
+  template:
+    metadata:
+      labels:
+        app: python-vault-app
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/agent-inject-status: "update"
+        vault.hashicorp.com/role: "oracle-app"
+        vault.hashicorp.com/agent-inject-secret-oracle.json: "apps/data/db/oracle"
+        vault.hashicorp.com/agent-inject-template-oracle.json: |
+          {{- with secret "apps/data/db/oracle" -}}
+          {
+            "url": "{{ .Data.data.url }}",
+            "username": "{{ .Data.data.username }}",
+            "password": "{{ .Data.data.password }}"
+          }
+          {{- end }}
+    spec:
+      serviceAccountName: python-vault-app
+      containers:
+        - name: app
+          image: python-vault-app:dev-2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SECRET_FILE
+              value: /vault/secrets/oracle.json
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000

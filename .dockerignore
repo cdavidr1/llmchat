@@ -1,0 +1,8 @@
+.codex
+.idea
+.pytest_cache
+.venv
+__pycache__/
+*.egg-info/
+*.pyc
+tests/

@@ -1,0 +1,48 @@
+PROMPT Reverting demo schema and test data for the llmchat Oracle learning project.
+PROMPT Apply with:
+PROMPT   sqlplus appuser/AppUserPass123!@//127.0.0.1:1521/XEPDB1 @sql/oracle/revert_demo_data.sql
+PROMPT This script drops the demo tables created by seed_demo_data.sql.
+
+WHENEVER SQLERROR EXIT SQL.SQLCODE
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP TABLE orders CASCADE CONSTRAINTS';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -942 THEN
+      RAISE;
+    END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP TABLE faq CASCADE CONSTRAINTS';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -942 THEN
+      RAISE;
+    END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP TABLE products CASCADE CONSTRAINTS';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -942 THEN
+      RAISE;
+    END IF;
+END;
+/
+
+BEGIN
+  EXECUTE IMMEDIATE 'DROP TABLE customers CASCADE CONSTRAINTS';
+EXCEPTION
+  WHEN OTHERS THEN
+    IF SQLCODE != -942 THEN
+      RAISE;
+    END IF;
+END;
+/
+
+PROMPT Revert complete.
