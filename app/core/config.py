@@ -2,10 +2,10 @@ from functools import lru_cache
 import json
 import os
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
-from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from pydantic import BaseModel, Field, SecretStr, ValidationError
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_DIR = "/vault/secrets"
 DEFAULT_ORACLE_SECRET_FILE = "/vault/secrets/oracle.json"
@@ -24,31 +24,30 @@ class Settings(BaseSettings):
     app_name: str = "llmchat"
     app_env: str = "local"
     log_level: str = "INFO"
-    llm_provider: str = "openai"
-    llm_model: str = "gpt-4o-mini"
+    llm_provider: str = "ollama"
+    llm_model: str = "qwen3"
     llm_provider_api_key: SecretStr | None = None
-    database_url: str = "sqlite:///./llmchat.db"
-    oracle_username: str | None = None
-    oracle_password: SecretStr | None = None
-    allowed_tables: Annotated[list[str], NoDecode] = Field(default_factory=list)
+    ollama_base_url: str = "http://localhost:11434"
+    mcp_server_url: str = "http://localhost:8001/mcp"
     config_dir: str = DEFAULT_CONFIG_DIR
 
     model_config = SettingsConfigDict(env_prefix="LLMCHAT_", extra="ignore")
 
-    @field_validator("allowed_tables", mode="before")
-    @classmethod
-    def parse_allowed_tables(cls, value: str | list[str] | None) -> list[str]:
-        if value is None or value == "":
-            return []
-        if isinstance(value, str):
-            return [table.strip() for table in value.split(",") if table.strip()]
-        return value
-
     @property
     def has_llm_api_key(self) -> bool:
-        return self.llm_provider_api_key is not None and bool(
-            self.llm_provider_api_key.get_secret_value()
-        )
+        if self.llm_provider_api_key is None:
+            return False
+        api_key = self.llm_provider_api_key.get_secret_value().strip()
+        return bool(api_key) and api_key != "replace-me"
+
+    @property
+    def llm_configured(self) -> bool:
+        provider = self.llm_provider.strip().lower()
+        if provider == "openai":
+            return self.has_llm_api_key
+        if provider == "ollama":
+            return bool(self.ollama_base_url.strip()) and bool(self.llm_model.strip())
+        return False
 
 
 @lru_cache
@@ -126,9 +125,8 @@ def load_mounted_config(
       llm_provider
       llm_model
       llm_provider_api_key
-      database_url
-      allowed_tables
-      oracle.json
+      ollama_base_url
+      mcp_server_url
 
     Environment variables are intentionally only a fallback/bootstrap layer.
     In Kubernetes, Vault Agent Injector writes these files into `/vault/secrets`.
@@ -146,12 +144,8 @@ def load_mounted_config(
             if not file_path.is_file() or file_path.name.startswith("."):
                 continue
             if file_path.name == "oracle.json":
-                oracle_values = load_oracle_secret(file_path)
-                if oracle_values:
-                    for key, value in oracle_values.items():
-                        values.setdefault(key, value)
-                    loaded_oracle_json = True
-                    loaded_files.append(file_path.name)
+                loaded_oracle_json = True
+                loaded_files.append(file_path.name)
                 continue
             try:
                 raw_value = file_path.read_text(encoding="utf-8").strip()
@@ -163,17 +157,8 @@ def load_mounted_config(
             loaded_mounted_files = True
 
     if oracle_secret_path.is_file() and oracle_secret_path.name not in loaded_files:
-        oracle_values = load_oracle_secret(oracle_secret_path)
-        if oracle_values:
-            values.update(
-                {
-                    key: value
-                    for key, value in oracle_values.items()
-                    if key not in values
-                }
-            )
-            loaded_oracle_json = True
-            loaded_files.append(oracle_secret_path.name)
+        loaded_oracle_json = True
+        loaded_files.append(oracle_secret_path.name)
 
     return values, ConfigLoadInfo(
         source=resolve_config_source(loaded_mounted_files, loaded_oracle_json),
@@ -183,6 +168,10 @@ def load_mounted_config(
 
 
 def load_oracle_secret(secret_file: str | Path) -> dict[str, str]:
+    """Retained only to recognize the legacy oracle.json config shape.
+
+    Database secrets now belong to the MCP DB server, not the chatbot host.
+    """
     path = Path(secret_file)
     try:
         raw_data: Any = json.loads(path.read_text(encoding="utf-8"))
@@ -192,17 +181,7 @@ def load_oracle_secret(secret_file: str | Path) -> dict[str, str]:
     if not isinstance(raw_data, dict):
         return {}
 
-    values: dict[str, str] = {}
-    database_url = raw_data.get("url")
-    if isinstance(database_url, str) and database_url.strip():
-        values["database_url"] = database_url.strip()
-    oracle_username = raw_data.get("username")
-    if isinstance(oracle_username, str) and oracle_username.strip():
-        values["oracle_username"] = oracle_username.strip()
-    oracle_password = raw_data.get("password")
-    if isinstance(oracle_password, str) and oracle_password.strip():
-        values["oracle_password"] = oracle_password.strip()
-    return values
+    return {}
 
 
 def load_fallback_config(config_dir: str | Path | None) -> tuple[dict[str, str], list[str]]:

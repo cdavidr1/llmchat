@@ -1,1 +1,0 @@
-jdbc:oracle:thin:@//host.docker.internal:1521/XEPDB1

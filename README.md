@@ -97,32 +97,21 @@ Expected mounted files:
 /vault/secrets/llm_provider
 /vault/secrets/llm_model
 /vault/secrets/llm_provider_api_key
-/vault/secrets/database_url
-/vault/secrets/allowed_tables
-/vault/secrets/oracle.json
+/vault/secrets/ollama_base_url
+/vault/secrets/mcp_server_url
 ```
 
-`allowed_tables` should contain a comma-separated list:
-
-```text
-customers,orders,products
-```
-
-The loader supports two secret formats:
-
-- one setting per file in `/vault/secrets`
-- the reference app's `/vault/secrets/oracle.json` with `url`, `username`, and
-  `password`
+The loader expects one setting per file in `/vault/secrets`. A legacy
+`oracle.json` file is detected for config-source reporting, but database
+credentials are owned by the external MCP DB server.
 
 Resolution order is:
 
 1. Vault mounted files under `/vault/secrets`
-2. Vault `oracle.json`
-3. `/app/config.example`
-4. built-in defaults
+2. `/app/config.example`
+3. built-in defaults
 
-If both Vault formats are present, the one-setting-per-file values win for
-overlapping keys. `config.example` only fills in missing values.
+`config.example` only fills in missing values.
 
 For local development, this repo includes `config.example/`. You can point the app to it with:
 
@@ -137,17 +126,58 @@ LLMCHAT_CONFIG_DIR=/vault/secrets
 SECRET_FILE=/vault/secrets/oracle.json
 ```
 
-`allowed_tables` is intentionally explicit. The future LLM/database flow should only expose tables listed there.
-
 To inspect what configuration shape was loaded without exposing secret values:
 
 ```bash
 curl http://127.0.0.1:8000/config-source
 ```
 
+## Chat Providers
+
+Provider selection now lives behind a small factory and adapter layer:
+
+- `openai` uses the OpenAI Python SDK and the Responses API
+- `ollama` uses the Ollama Python SDK and local `/api/chat` tool calling
+
+The database tool layer stays provider-agnostic.
+
+For local development, `config.example/` now defaults to Ollama:
+
+```text
+llm_provider=ollama
+llm_model=qwen3
+ollama_base_url=http://host.docker.internal:11434
+mcp_server_url=http://host.docker.internal:8001/mcp
+```
+
+If you run the app outside Docker, override the base URL if needed:
+
+```bash
+LLMCHAT_OLLAMA_BASE_URL=http://localhost:11434
+```
+
+Make sure Ollama is running and the model exists locally, for example:
+
+```bash
+ollama pull qwen3
+```
+
+To switch back to OpenAI later, set:
+
+```text
+llm_provider=openai
+llm_model=gpt-4o-mini
+llm_provider_api_key=<your-api-key>
+```
+
 ## Chat Endpoint
 
-The `/chat` endpoint is currently a placeholder. It validates config and requested table access, but it does not call LangChain yet.
+The `/chat` endpoint validates requested table access, creates or resumes an
+in-memory session, and uses the configured provider when that provider is
+configured.
+When `llm_provider` is `openai` or `ollama`, it calls the configured provider
+through a provider adapter. The adapter calls the external MCP DB server for
+database tools instead of executing local DB tools in-process.
 
 ```bash
 curl -X POST http://127.0.0.1:8000/chat \
@@ -155,10 +185,22 @@ curl -X POST http://127.0.0.1:8000/chat \
   -d '{"message":"What orders were created today?","tables":["orders"]}'
 ```
 
+To continue a conversation, pass the returned `session_id`:
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"session_id":"returned-session-id","message":"Which customer placed the first one?","tables":["orders","customers"]}'
+```
+
+For OpenAI, set `llm_provider_api_key` through Vault mounted files,
+`config.example`, or the `LLMCHAT_LLM_PROVIDER_API_KEY` environment variable.
+The placeholder value `replace-me` is treated as not configured.
+
 ## Database Tools
 
-Before wiring any model provider, the service now exposes a small provider-agnostic
-database tool layer. These tools are intentionally narrow and do not accept
+The service now calls the external MCP DB server for database tools. The tool
+contract still exposes the same narrow read-only operations and does not allow
 arbitrary SQL.
 
 Available tools:
@@ -187,9 +229,3 @@ The tool layer currently supports:
 It does not yet support:
 
 - free-form SQL
-- MCP
-- provider-specific tool bindings
-
-## Next Step
-
-The LangChain integration should be added behind a service layer, not directly inside route handlers. That keeps HTTP concerns separate from LLM orchestration.

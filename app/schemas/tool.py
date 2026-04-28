@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 class ToolDefinitionResponse(BaseModel):
     name: str
     description: str
-    input_schema: dict[str, str] = Field(default_factory=dict)
+    input_schema: dict[str, object] = Field(default_factory=dict)
 
 
 class AllowedTablesResponse(BaseModel):

@@ -1,42 +1,81 @@
-import sqlite3
-
 import pytest
 from fastapi import HTTPException
 
 from app.api.routes import describe_table, list_allowed_tables, query_table, tool_definitions
-from app.core.config import get_settings
 from app.schemas.tool import QueryTableRequest
 
 
-def _create_sqlite_test_db(database_path: str) -> None:
-    connection = sqlite3.connect(database_path)
-    try:
-        connection.execute(
-            """
-            CREATE TABLE customers (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                city TEXT
-            )
-            """
-        )
-        connection.executemany(
-            "INSERT INTO customers (name, city) VALUES (?, ?)",
-            [
-                ("Ada", "London"),
-                ("Grace", "New York"),
-            ],
-        )
-        connection.commit()
-    finally:
-        connection.close()
+class FakeToolService:
+    def tool_definitions(self) -> list[dict[str, object]]:
+        return [
+            {
+                "name": "list_allowed_tables",
+                "description": "List allowed tables",
+                "input_schema": {"type": "object", "properties": {}, "required": []},
+            },
+            {
+                "name": "describe_table",
+                "description": "Describe one table",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {"table_name": {"type": "string"}},
+                    "required": ["table_name"],
+                },
+            },
+            {
+                "name": "query_table",
+                "description": "Query one table",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "table_name": {"type": "string"},
+                        "columns": {"type": "array"},
+                        "limit": {"type": "integer"},
+                    },
+                    "required": ["table_name"],
+                },
+            },
+        ]
+
+    def list_allowed_tables(self) -> list[str]:
+        return ["customers"]
+
+    def describe_table(self, table_name: str) -> list[dict[str, str | bool]]:
+        if table_name != "customers":
+            raise ValueError(f"Table is not allowed: {table_name}")
+        return [
+            {"name": "id", "data_type": "INTEGER", "nullable": False},
+            {"name": "name", "data_type": "TEXT", "nullable": False},
+            {"name": "city", "data_type": "TEXT", "nullable": True},
+        ]
+
+    def query_table_result(
+        self,
+        table_name: str,
+        columns: list[str] | None = None,
+        limit: int = 20,
+    ) -> dict[str, object]:
+        if table_name != "customers":
+            raise ValueError(f"Table is not allowed: {table_name}")
+        if columns == ["secret_note"]:
+            raise ValueError("Column is not available on the table: secret_note")
+        resolved_columns = columns or ["id", "name", "city"]
+        rows = [{"name": "Ada"}] if columns == ["name"] and limit == 1 else [
+            {"id": 1, "name": "Ada", "city": "London"},
+            {"id": 2, "name": "Grace", "city": "New York"},
+        ][:limit]
+        return {
+            "table_name": table_name,
+            "columns": resolved_columns,
+            "row_count": len(rows),
+            "limit_applied": limit,
+            "rows": rows,
+        }
 
 
-def _write_sqlite_config(config_dir, database_path: str) -> None:
-    config_dir.mkdir()
-    (config_dir / "database_url").write_text(f"sqlite:///{database_path}", encoding="utf-8")
-    (config_dir / "allowed_tables").write_text("customers", encoding="utf-8")
-    (config_dir / "app_name").write_text("tool-test", encoding="utf-8")
+@pytest.fixture(autouse=True)
+def patch_tool_service(monkeypatch):
+    monkeypatch.setattr("app.api.routes.build_tool_service", lambda: FakeToolService())
 
 
 def test_tool_definitions_are_exposed() -> None:
@@ -49,47 +88,20 @@ def test_tool_definitions_are_exposed() -> None:
     ]
 
 
-def test_list_allowed_tables_reads_from_config(monkeypatch, tmp_path) -> None:
-    database_path = tmp_path / "tool-test.db"
-    _create_sqlite_test_db(str(database_path))
-    config_dir = tmp_path / "config"
-    _write_sqlite_config(config_dir, str(database_path))
-    missing_fallback = tmp_path / "missing-fallback"
-    monkeypatch.setenv("LLMCHAT_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("LLMCHAT_FALLBACK_CONFIG_DIR", str(missing_fallback))
-    get_settings.cache_clear()
-
+def test_list_allowed_tables_reads_from_mcp_service() -> None:
     response = list_allowed_tables()
 
     assert response.tables == ["customers"]
 
 
-def test_describe_table_returns_sqlite_columns(monkeypatch, tmp_path) -> None:
-    database_path = tmp_path / "tool-test.db"
-    _create_sqlite_test_db(str(database_path))
-    config_dir = tmp_path / "config"
-    _write_sqlite_config(config_dir, str(database_path))
-    missing_fallback = tmp_path / "missing-fallback"
-    monkeypatch.setenv("LLMCHAT_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("LLMCHAT_FALLBACK_CONFIG_DIR", str(missing_fallback))
-    get_settings.cache_clear()
-
+def test_describe_table_returns_columns_from_mcp_service() -> None:
     response = describe_table("customers")
 
     assert response.table_name == "customers"
     assert [column.name for column in response.columns] == ["id", "name", "city"]
 
 
-def test_query_table_returns_bounded_rows(monkeypatch, tmp_path) -> None:
-    database_path = tmp_path / "tool-test.db"
-    _create_sqlite_test_db(str(database_path))
-    config_dir = tmp_path / "config"
-    _write_sqlite_config(config_dir, str(database_path))
-    missing_fallback = tmp_path / "missing-fallback"
-    monkeypatch.setenv("LLMCHAT_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("LLMCHAT_FALLBACK_CONFIG_DIR", str(missing_fallback))
-    get_settings.cache_clear()
-
+def test_query_table_returns_bounded_rows() -> None:
     response = query_table(QueryTableRequest(table_name="customers", columns=["name"], limit=1))
 
     assert response.table_name == "customers"
@@ -98,16 +110,7 @@ def test_query_table_returns_bounded_rows(monkeypatch, tmp_path) -> None:
     assert response.rows == [{"name": "Ada"}]
 
 
-def test_query_table_rejects_unavailable_column(monkeypatch, tmp_path) -> None:
-    database_path = tmp_path / "tool-test.db"
-    _create_sqlite_test_db(str(database_path))
-    config_dir = tmp_path / "config"
-    _write_sqlite_config(config_dir, str(database_path))
-    missing_fallback = tmp_path / "missing-fallback"
-    monkeypatch.setenv("LLMCHAT_CONFIG_DIR", str(config_dir))
-    monkeypatch.setenv("LLMCHAT_FALLBACK_CONFIG_DIR", str(missing_fallback))
-    get_settings.cache_clear()
-
+def test_query_table_rejects_unavailable_column() -> None:
     with pytest.raises(HTTPException) as exc_info:
         query_table(QueryTableRequest(table_name="customers", columns=["secret_note"], limit=1))
 
