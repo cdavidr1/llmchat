@@ -17,5 +17,6 @@ def build_chat_provider(settings: Settings) -> ChatProvider | None:
         return OllamaChatProvider(
             model=settings.llm_model,
             base_url=settings.ollama_base_url,
+            think=settings.ollama_think,
         )
     raise ValueError(f"Unsupported llm provider: {settings.llm_provider}")

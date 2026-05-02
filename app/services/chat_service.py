@@ -1,5 +1,7 @@
+from time import perf_counter
+
 from app.core.config import Settings
-from app.providers.base import ChatProvider
+from app.providers.base import ChatProvider, ChatProviderResult
 from app.schemas.chat import ChatRequest, ChatResponse
 from app.services.conversation_store import ConversationStore, conversation_store
 from app.services.tool_service import ToolService
@@ -22,12 +24,16 @@ class ChatService:
         allowed_tables = self._tool_service.list_allowed_tables()
         requested_tables = self._resolve_requested_tables(request.tables, allowed_tables)
         session_id = request.session_id or self._conversation_store.create_session_id()
-        answer = self._build_response(request, session_id, requested_tables)
+        response_start = perf_counter()
+        provider_result = self._build_response(request, session_id, requested_tables)
+        response_time = perf_counter() - response_start
 
         return ChatResponse(
             session_id=session_id,
             message=request.message,
-            response=answer,
+            response=provider_result.response,
+            response_time=response_time,
+            tool_calls=provider_result.tool_calls,
             provider=self._settings.llm_provider,
             model=self._settings.llm_model,
             allowed_tables=allowed_tables,
@@ -56,9 +62,12 @@ class ChatService:
         request: ChatRequest,
         session_id: str,
         requested_tables: list[str],
-    ) -> str:
+    ) -> ChatProviderResult:
         if self._provider is None:
-            return self._build_placeholder_response(request, requested_tables)
+            return ChatProviderResult(
+                response=self._build_placeholder_response(request, requested_tables),
+                tool_calls=[],
+            )
 
         return self._provider.chat(
             request=request,

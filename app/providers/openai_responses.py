@@ -3,17 +3,23 @@ from typing import Any
 
 from openai import OpenAI
 
+from app.providers.base import ChatProviderResult
 from app.schemas.chat import ChatRequest
 from app.services.conversation_store import ConversationStore
 from app.services.tool_service import ToolService
 
 
 SYSTEM_INSTRUCTIONS = """
-You are a database-backed assistant for a small demo service.
-Use the provided database tools to answer questions about exposed tables.
-Do not invent table names or columns. Do not request arbitrary SQL.
+You are a fast Oracle database assistant.
+Use a tool immediately when the user asks for database-backed information.
+Do not explain reasoning.
+Do not ask follow-up questions unless required.
+Prefer one tool call.
+After the tool returns, answer in 1-3 short sentences.
+Never generate SQL unless no purpose-built tool exists.
+Use only the provided database tools to answer questions about exposed tables.
+Do not invent table names or columns.
 If the available tools or data are not enough, say what is missing.
-Keep answers concise and cite the table names you used.
 """.strip()
 
 
@@ -35,9 +41,10 @@ class OpenAIResponsesChatProvider:
         session_id: str,
         conversation_store: ConversationStore,
         tool_service: ToolService,
-    ) -> str:
+    ) -> ChatProviderResult:
         input_items = conversation_store.get_items(session_id)
         new_items: list[dict[str, object]] = []
+        tool_calls_used: list[str] = []
         user_item = {
             "role": "user",
             "content": request.message,
@@ -59,9 +66,13 @@ class OpenAIResponsesChatProvider:
             new_items.extend(response_items)
             if not function_calls:
                 conversation_store.append_items(session_id, new_items)
-                return response.output_text or ""
+                return ChatProviderResult(
+                    response=response.output_text or "",
+                    tool_calls=tool_calls_used,
+                )
 
             for function_call in function_calls:
+                tool_calls_used.append(str(function_call.name))
                 try:
                     result = self._execute_tool(
                         function_call.name,
@@ -86,7 +97,10 @@ class OpenAIResponsesChatProvider:
             )
 
         conversation_store.append_items(session_id, new_items)
-        return response.output_text or "The model did not produce a final answer."
+        return ChatProviderResult(
+            response=response.output_text or "The model did not produce a final answer.",
+            tool_calls=tool_calls_used,
+        )
 
     def _tool_definitions(self) -> list[dict[str, object]]:
         return [

@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     llm_model: str = "qwen3"
     llm_provider_api_key: SecretStr | None = None
     ollama_base_url: str = "http://localhost:11434"
+    ollama_think: bool = False
     mcp_server_url: str = "http://localhost:8001/mcp"
     config_dir: str = DEFAULT_CONFIG_DIR
 

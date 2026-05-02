@@ -1,6 +1,7 @@
 from pydantic import SecretStr
 
 from app.core.config import Settings
+from app.providers.base import ChatProviderResult
 from app.schemas.chat import ChatRequest
 from app.services.chat_service import ChatService
 from app.services.conversation_store import ConversationStore
@@ -15,7 +16,7 @@ class FakeProvider:
     def __init__(self) -> None:
         self.seen_session_id: str | None = None
 
-    def chat(self, request, session_id, conversation_store, tool_service) -> str:
+    def chat(self, request, session_id, conversation_store, tool_service) -> ChatProviderResult:
         self.seen_session_id = session_id
         assert tool_service.list_allowed_tables() == ["customers"]
         conversation_store.append_items(
@@ -25,7 +26,7 @@ class FakeProvider:
                 {"role": "assistant", "content": "Provider answer"},
             ],
         )
-        return "Provider answer"
+        return ChatProviderResult(response="Provider answer", tool_calls=["list_allowed_tables"])
 
 
 def test_chat_service_uses_provider_and_creates_session() -> None:
@@ -42,6 +43,8 @@ def test_chat_service_uses_provider_and_creates_session() -> None:
     assert response.session_id
     assert provider.seen_session_id == response.session_id
     assert response.response == "Provider answer"
+    assert response.response_time >= 0
+    assert response.tool_calls == ["list_allowed_tables"]
     assert response.allowed_tables == ["customers"]
     assert response.requested_tables == ["customers"]
     assert response.llm_configured is True
@@ -59,4 +62,6 @@ def test_chat_service_returns_placeholder_without_provider() -> None:
     assert response.session_id
     assert response.allowed_tables == ["customers"]
     assert response.llm_configured is False
+    assert response.response_time >= 0
+    assert response.tool_calls == []
     assert response.response.startswith("LLM integration is not wired yet.")
