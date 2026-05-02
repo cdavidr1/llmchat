@@ -69,14 +69,15 @@ def test_openai_responses_provider_executes_mcp_tools() -> None:
     )
     conversation_store = ConversationStore()
 
-    answer = provider.chat(
+    result = provider.chat(
         request=ChatRequest(message="What tables can you use?"),
         session_id="session-1",
         conversation_store=conversation_store,
         tool_service=FakeToolService(),
     )
 
-    assert answer == "Use the customers table."
+    assert result.response == "Use the customers table."
+    assert result.tool_calls == ["list_allowed_tables"]
     assert len(client.responses.calls) == 2
     assert client.responses.calls[0]["model"] == "gpt-test"
     second_input = client.responses.calls[1]["input"]

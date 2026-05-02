@@ -17,6 +17,8 @@ class ChatResponse(BaseModel):
     session_id: str
     message: str
     response: str
+    response_time: float
+    tool_calls: list[str]
     provider: str
     model: str
     allowed_tables: list[str]

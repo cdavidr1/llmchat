@@ -3,17 +3,23 @@ from typing import Any
 
 from ollama import Client
 
+from app.providers.base import ChatProviderResult
 from app.schemas.chat import ChatRequest
 from app.services.conversation_store import ConversationStore
 from app.services.tool_service import ToolService
 
 
 SYSTEM_INSTRUCTIONS = """
-You are a database-backed assistant for a small demo service.
-Use the provided database tools to answer questions about exposed tables.
-Do not invent table names or columns. Do not request arbitrary SQL.
+You are a fast Oracle database assistant.
+Use a tool immediately when the user asks for database-backed information.
+Do not explain reasoning.
+Do not ask follow-up questions unless required.
+Prefer one tool call.
+After the tool returns, answer in 1-3 short sentences.
+Never generate SQL unless no purpose-built tool exists.
+Use only the provided database tools to answer questions about exposed tables.
+Do not invent table names or columns.
 If the available tools or data are not enough, say what is missing.
-Keep answers concise and cite the table names you used.
 """.strip()
 
 
@@ -22,11 +28,13 @@ class OllamaChatProvider:
         self,
         model: str,
         base_url: str,
+        think: bool = False,
         client: Client | None = None,
         max_tool_rounds: int = 4,
     ) -> None:
         self._client = client or Client(host=base_url)
         self._model = model
+        self._think = think
         self._max_tool_rounds = max_tool_rounds
 
     def chat(
@@ -35,12 +43,13 @@ class OllamaChatProvider:
         session_id: str,
         conversation_store: ConversationStore,
         tool_service: ToolService,
-    ) -> str:
+    ) -> ChatProviderResult:
         messages = [
             {"role": "system", "content": SYSTEM_INSTRUCTIONS},
             *conversation_store.get_items(session_id),
         ]
         new_items: list[dict[str, object]] = []
+        tool_calls_used: list[str] = []
         user_message = {"role": "user", "content": request.message}
         messages.append(user_message)
         new_items.append(user_message)
@@ -50,6 +59,7 @@ class OllamaChatProvider:
                 model=self._model,
                 messages=messages,
                 tools=self._tool_definitions(),
+                think=self._think,
                 stream=False,
             )
             assistant_message = self._extract_message(response)
@@ -58,15 +68,26 @@ class OllamaChatProvider:
             tool_calls = assistant_message.get("tool_calls") or []
             if not tool_calls:
                 conversation_store.append_items(session_id, new_items)
-                return str(assistant_message.get("content", "") or "")
+                return ChatProviderResult(
+                    response=str(assistant_message.get("content", "") or ""),
+                    tool_calls=tool_calls_used,
+                )
 
             for tool_call in tool_calls:
+                tool_calls_used.append(self._tool_call_name(tool_call))
                 tool_message = self._build_tool_message(tool_call, tool_service)
                 messages.append(tool_message)
                 new_items.append(tool_message)
 
         conversation_store.append_items(session_id, new_items)
-        return "The model did not produce a final answer."
+        return ChatProviderResult(
+            response="The model did not produce a final answer.",
+            tool_calls=tool_calls_used,
+        )
+
+    def _tool_call_name(self, tool_call: dict[str, object]) -> str:
+        function = dict(tool_call.get("function") or {})
+        return str(function.get("name", "unknown"))
 
     def _tool_definitions(self) -> list[dict[str, object]]:
         return [

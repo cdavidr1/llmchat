@@ -64,15 +64,18 @@ def test_ollama_provider_executes_mcp_tools() -> None:
     )
     conversation_store = ConversationStore()
 
-    answer = provider.chat(
+    result = provider.chat(
         request=ChatRequest(message="What tables can you use?"),
         session_id="session-1",
         conversation_store=conversation_store,
         tool_service=FakeToolService(),
     )
 
-    assert answer == "I can use customers."
+    assert result.response == "I can use customers."
+    assert result.tool_calls == ["list_allowed_tables"]
     assert len(client.calls) == 2
+    assert client.calls[0]["think"] is False
+    assert client.calls[1]["think"] is False
     tool_messages = [item for item in client.calls[1]["messages"] if item.get("role") == "tool"]
     assert json.loads(tool_messages[0]["content"]) == {"tables": ["customers"]}
     assert conversation_store.get_items("session-1")

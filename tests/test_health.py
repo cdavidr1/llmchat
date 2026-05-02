@@ -34,6 +34,8 @@ def test_chat_returns_placeholder_response(monkeypatch) -> None:
     assert response.message == "Hello"
     assert response.provider == "ollama"
     assert response.model == "qwen3"
+    assert response.response_time >= 0
+    assert response.tool_calls == []
     assert response.allowed_tables == ["customers"]
     assert response.requested_tables == []
     assert response.llm_configured is True
