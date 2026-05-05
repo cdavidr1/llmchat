@@ -1,6 +1,6 @@
 # llmchat
 
-FastAPI skeleton for the LLM chat service.
+FastAPI skeleton for the LLM chat service..
 
 ## What Is Here
 
