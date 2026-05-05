@@ -19,12 +19,12 @@ warm-cache:
       - .cache/pip
     policy: pull-push
   script:
-    - python -m pip install --upgrade pip
     - |
       if [ -d .cache/pip/wheels ] && [ "$(find .cache/pip/wheels -type f | wc -l)" -gt 0 ]; then
         echo "Python dependency cache already exists for this pyproject.toml key."
       else
         echo "Python dependency cache missing. Downloading wheels."
+        python -m pip install --upgrade pip
         python -m pip download ".[dev]" --dest .cache/pip/wheels
       fi
 
