@@ -19,3 +19,5 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.log
+AGENTS.md 
+.agents/
