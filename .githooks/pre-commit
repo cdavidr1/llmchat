@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+
+docker run --rm \
+  -v "$repo_root:/path" \
+  zricethezav/gitleaks:latest \
+  detect --source="/path" --verbose

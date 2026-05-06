@@ -34,6 +34,17 @@ http://127.0.0.1:8000/docs
 pytest
 ```
 
+## Git Hooks
+
+This repo includes a tracked pre-commit hook in `.githooks/pre-commit` that
+runs Gitleaks through Docker before Git accepts a commit.
+
+Enable it once per clone with:
+
+```bash
+./scripts/install-git-hooks.sh
+```
+
 ## Kubernetes
 
 Kubernetes manifests live in `k8s/` and follow the Vault Agent Injector pattern
