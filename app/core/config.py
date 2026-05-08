@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, SecretStr, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEFAULT_CONFIG_DIR = "/vault/secrets"
-DEFAULT_ORACLE_SECRET_FILE = "/vault/secrets/oracle.json"
+DEFAULT_ORACLE_SECRET_FILE = "/vault/secrets/oracle.json"  # nosec B105
 DEFAULT_FALLBACK_CONFIG_DIR = "/app/config.example"
 
 

@@ -37,6 +37,22 @@ warm-cache:
         python -m pip download ".[dev]" --dest .cache/pip/wheels
       fi
 
+bandit:
+  stage: test
+  image: python:3.12-slim
+  cache:
+    key:
+      files:
+        - pyproject.toml
+    paths:
+      - .cache/pip
+    policy: pull
+  before_script:
+    - python -m pip install --upgrade pip
+    - python -m pip install --find-links .cache/pip/wheels ".[dev]"
+  script:
+    - python -m bandit -r app
+
 test:
   stage: test
   image: python:3.12-slim
@@ -75,6 +91,7 @@ build:
   services:
     - docker:27-dind
   needs:
+    - bandit
     - test
     - lint
   before_script:
