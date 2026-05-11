@@ -15,7 +15,12 @@ gitleaks:
     name: zricethezav/gitleaks:latest
     entrypoint: [""]
   script:
-    - gitleaks detect --source . --verbose
+    - mkdir -p reports
+    - gitleaks detect --source . --verbose --redact --report-format json --report-path reports/gitleaks.json
+  artifacts:
+    when: always
+    paths:
+      - reports/gitleaks.json
 
 warm-cache:
   stage: cache
@@ -51,7 +56,12 @@ bandit:
     - python -m pip install --upgrade pip
     - python -m pip install --find-links .cache/pip/wheels ".[dev]"
   script:
-    - python -m bandit -r app
+    - mkdir -p reports
+    - python -m bandit -r app -f json -o reports/bandit.json
+  artifacts:
+    when: always
+    paths:
+      - reports/bandit.json
 
 semgrep:
   stage: test
@@ -67,7 +77,15 @@ semgrep:
     - python -m pip install --upgrade pip
     - python -m pip install --find-links .cache/pip/wheels ".[dev]"
   script:
-    - semgrep scan --config auto --error app
+    - mkdir -p reports
+    - semgrep scan --config auto --error --json-output reports/semgrep.json --gitlab-sast-output reports/semgrep-gitlab-sast.json app
+  artifacts:
+    when: always
+    paths:
+      - reports/semgrep.json
+      - reports/semgrep-gitlab-sast.json
+    reports:
+      sast: reports/semgrep-gitlab-sast.json
 
 test:
   stage: test
